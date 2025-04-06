@@ -19,9 +19,9 @@ export function useOuterDrop() {
       hover: (_item, m) => {
         if (!m.isOver({ shallow: true })) return;
         const offset = m.getClientOffset();
-        if (!tree.listEl.current || !offset) return;
+        if (!tree.parentRef.current || !offset) return;
         const { cursor, drop } = computeDrop({
-          element: tree.listEl.current,
+          element: tree.parentRef.current,
           offset: offset,
           indent: tree.indent,
           node: null,
@@ -37,8 +37,8 @@ export function useOuterDrop() {
         }
       },
     }),
-    [tree]
+    [tree],
   );
 
-  drop(tree.listEl);
+  drop(tree.parentRef);
 }

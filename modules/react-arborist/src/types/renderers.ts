@@ -12,12 +12,15 @@ export type NodeRendererProps<T> = {
   preview?: boolean;
 };
 
-export type RowRendererProps<T> = {
+export interface RowRendererProps<T> {
   node: NodeApi<T>;
-  innerRef: (el: HTMLDivElement | null) => void;
-  attrs: HTMLAttributes<any>;
-  children: ReactElement;
-};
+  style: React.CSSProperties;
+  index?: number;
+  innerRef?: (n: any) => void;
+  attrs?: React.HTMLAttributes<any>;
+  children?: React.ReactNode;
+  isSticky?: boolean;
+}
 
 export type DragPreviewProps = {
   offset: XYCoord | null;

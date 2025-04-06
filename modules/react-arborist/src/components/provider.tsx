@@ -6,7 +6,6 @@ import {
   useRef,
 } from "react";
 import { useSyncExternalStore } from "use-sync-external-store/shim";
-import { FixedSizeList } from "react-window";
 import {
   DataUpdatesContext,
   DndContext,
@@ -35,21 +34,20 @@ export function TreeProvider<T>({
   imperativeHandle,
   children,
 }: Props<T>) {
-  const list = useRef<FixedSizeList | null>(null);
-  const listEl = useRef<HTMLDivElement | null>(null);
+  const parentRef = useRef<HTMLDivElement | null>(null);
   const store = useRef<Store<RootState, Actions>>(
     // @ts-ignore
-    createStore(rootReducer, initialState(treeProps))
+    createStore(rootReducer, initialState(treeProps)),
   );
   const state = useSyncExternalStore<RootState>(
     store.current.subscribe,
     store.current.getState,
-    () => SERVER_STATE
+    () => SERVER_STATE,
   );
 
   /* The tree api object is stable. */
   const api = useMemo(() => {
-    return new TreeApi<T>(store.current, treeProps, list, listEl);
+    return new TreeApi<T>(store.current, treeProps, parentRef);
   }, []);
 
   /* Make sure the tree instance stays in sync */
@@ -65,7 +63,7 @@ export function TreeProvider<T>({
   /* Change selection based on props */
   useEffect(() => {
     if (api.props.selection) {
-      api.select(api.props.selection, { focus: false });
+      api.select(api.props.selection, { scroll: false });
     } else {
       api.deselectAll();
     }

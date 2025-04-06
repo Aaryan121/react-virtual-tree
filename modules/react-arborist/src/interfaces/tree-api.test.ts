@@ -5,7 +5,7 @@ import { TreeApi } from "./tree-api";
 
 function setupApi(props: TreeProps<any>) {
   const store = createStore(rootReducer);
-  return new TreeApi(store, props, { current: null }, { current: null });
+  return new TreeApi(store, props, { current: null });
 }
 
 test("tree.canDrop()", () => {

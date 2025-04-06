@@ -38,6 +38,7 @@ export default function Cities() {
                 initialData={data}
                 selectionFollowsFocus={followsFocus}
                 disableMultiSelection={disableMulti}
+                stickyHeaders={true}
                 ref={(t) => setTree(t)}
                 openByDefault={true}
                 searchTerm={searchTerm}
@@ -174,7 +175,7 @@ function Node({ node, style, dragHandle }: NodeRendererProps<Data>) {
   return (
     <div
       ref={dragHandle}
-      style={style}
+      style={{ ...style, backgroundColor: node.isSelected ? "blue" : "black" }}
       className={clsx(styles.node, node.state)}
       onClick={() => node.isInternal && node.toggle()}
     >

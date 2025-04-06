@@ -7,6 +7,13 @@ import { NodeApi } from "../interfaces/node-api";
 import { OpenMap } from "../state/open-slice";
 import { useDragDropManager } from "react-dnd";
 
+// Update scroll event to be compatible with TanStack Virtual
+interface ScrollEvent {
+  scrollOffset: number;
+  scrollUpdateWasRequested: boolean;
+  scrollDirection?: string; // Make this optional since we're not using it
+}
+
 export interface TreeProps<T> {
   /* Data Options */
   data?: readonly T[];
@@ -55,7 +62,7 @@ export interface TreeProps<T> {
   /* Event Handlers */
   onActivate?: (node: NodeApi<T>) => void;
   onSelect?: (nodes: NodeApi<T>[]) => void;
-  onScroll?: (props: ListOnScrollProps) => void;
+  onScroll?: (props: ScrollEvent) => void;
   onToggle?: (id: string) => void;
   onFocus?: (node: NodeApi<T>) => void;
 
@@ -77,4 +84,7 @@ export interface TreeProps<T> {
   onClick?: MouseEventHandler;
   onContextMenu?: MouseEventHandler;
   dndManager?: ReturnType<typeof useDragDropManager>;
+
+  /* Virtualization options */
+  stickyHeaders?: boolean; // Controls if open parent nodes should be sticky
 }

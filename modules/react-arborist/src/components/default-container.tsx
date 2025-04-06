@@ -1,9 +1,8 @@
-import { FixedSizeList } from "react-window";
+import { useVirtualizer, defaultRangeExtractor } from "@tanstack/react-virtual";
 import { useDataUpdates, useTreeApi } from "../context";
 import { focusNextElement, focusPrevElement } from "../utils";
-import { ListOuterElement } from "./list-outer-element";
-import { ListInnerElement } from "./list-inner-element";
-import { RowContainer } from "./row-container";
+import { useRef, useMemo, useCallback } from "react";
+import React from "react";
 
 let focusSearchTerm = "";
 let timeoutId: any = null;
@@ -16,6 +15,72 @@ let timeoutId: any = null;
 export function DefaultContainer() {
   useDataUpdates();
   const tree = useTreeApi();
+  const parentRef = useRef<HTMLDivElement>(null);
+
+  // Track active sticky index
+  const activeStickyIndexRef = useRef(0);
+
+  // Get sticky indexes - open internal nodes
+  const stickyIndexes = useMemo(() => {
+    if (!tree.props.stickyHeaders) return [];
+
+    return tree.visibleNodes
+      .map((node, index) => (node.isInternal && node.isOpen ? index : -1))
+      .filter((index) => index !== -1);
+  }, [tree.visibleNodes, tree.props.stickyHeaders]);
+
+  // Helper functions to determine if a node should be sticky
+  const isSticky = useCallback(
+    (index: number) =>
+      tree.props.stickyHeaders && stickyIndexes.includes(index),
+    [stickyIndexes, tree.props.stickyHeaders],
+  );
+
+  const isActiveSticky = useCallback(
+    (index: number) =>
+      tree.props.stickyHeaders && activeStickyIndexRef.current === index,
+    [tree.props.stickyHeaders],
+  );
+
+  // Custom range extractor to ensure sticky headers stay in view
+  const customRangeExtractor = useCallback(
+    (range: any) => {
+      if (!tree.props.stickyHeaders) {
+        return defaultRangeExtractor(range);
+      }
+
+      // Find the most recent sticky header that is still in view
+      activeStickyIndexRef.current =
+        [...stickyIndexes]
+          .reverse()
+          .find((index) => range.startIndex >= index) ?? 0;
+
+      // Include both the sticky header and regular visible items
+      const next = new Set([
+        activeStickyIndexRef.current,
+        ...defaultRangeExtractor(range),
+      ]);
+
+      return [...next].sort((a, b) => a - b);
+    },
+    [stickyIndexes, tree.props.stickyHeaders],
+  );
+
+  // Initialize the virtualizer with TanStack Virtual
+  const rowVirtualizer = useVirtualizer({
+    count: tree.visibleNodes.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => tree.rowHeight,
+    overscan: tree.overscanCount,
+    getItemKey: (index) => tree.visibleNodes[index]?.id || index,
+    rangeExtractor: customRangeExtractor,
+  });
+
+  // Store the virtualizer reference in the tree API
+  React.useEffect(() => {
+    tree.setVirtualizer(rowVirtualizer);
+  }, [rowVirtualizer, tree]);
+
   return (
     <div
       role="tree"
@@ -216,24 +281,79 @@ export function DefaultContainer() {
         if (node) tree.focus(node.id);
       }}
     >
-      {/* @ts-ignore */}
-      <FixedSizeList
+      {/* Replace FixedSizeList with TanStack Virtual implementation */}
+      <div
+        ref={parentRef}
         className={tree.props.className}
-        outerRef={tree.listEl}
-        itemCount={tree.visibleNodes.length}
-        height={tree.height}
-        width={tree.width}
-        itemSize={tree.rowHeight}
-        overscanCount={tree.overscanCount}
-        itemKey={(index) => tree.visibleNodes[index]?.id || index}
-        outerElementType={ListOuterElement}
-        innerElementType={ListInnerElement}
-        onScroll={tree.props.onScroll}
-        onItemsRendered={tree.onItemsRendered.bind(tree)}
-        ref={tree.list}
+        style={{
+          height: tree.height,
+          width: tree.width,
+          overflow: "auto",
+        }}
+        onScroll={(e) => {
+          tree.props.onScroll?.({
+            scrollOffset: e.currentTarget.scrollTop,
+            scrollUpdateWasRequested: false,
+          });
+        }}
       >
-        {RowContainer}
-      </FixedSizeList>
+        <div
+          style={{
+            height: `${rowVirtualizer.getTotalSize()}px`,
+            width: "100%",
+            position: "relative",
+          }}
+        >
+          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+            const node = tree.visibleNodes[virtualRow.index];
+            const nodeIsSticky = isSticky(virtualRow.index);
+            const nodeIsActiveSticky = isActiveSticky(virtualRow.index);
+
+            return (
+              <div
+                key={virtualRow.key}
+                data-index={virtualRow.index}
+                style={{
+                  // Apply conditional styling for sticky headers
+                  ...(nodeIsSticky
+                    ? {
+                        zIndex: 1,
+                      }
+                    : {}),
+                  // Use different positioning based on sticky status
+                  ...(nodeIsActiveSticky
+                    ? {
+                        position: "sticky",
+                        top: 0,
+                        left: 0,
+                      }
+                    : {
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }),
+                  width: "100%",
+                  height: `${virtualRow.size}px`,
+                }}
+              >
+                {React.createElement(tree.renderRow, {
+                  node,
+                  style: { height: virtualRow.size },
+                  innerRef: () => {},
+                  attrs: {},
+                  children: React.createElement(tree.renderNode, {
+                    node,
+                    style: { height: virtualRow.size },
+                    tree,
+                  }),
+                  isSticky: nodeIsSticky,
+                })}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

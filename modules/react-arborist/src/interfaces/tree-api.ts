@@ -2,7 +2,7 @@ import { EditResult } from "../types/handlers";
 import { Identity, IdObj } from "../types/utils";
 import { TreeProps } from "../types/tree-props";
 import { MutableRefObject } from "react";
-import { Align, FixedSizeList, ListOnItemsRenderedProps } from "react-window";
+import { Virtualizer, VirtualItem } from "@tanstack/react-virtual";
 import * as utils from "../utils";
 import { DefaultCursor } from "../components/default-cursor";
 import { DefaultRow } from "../components/default-row";
@@ -30,12 +30,12 @@ export class TreeApi<T> {
   visibleStartIndex: number = 0;
   visibleStopIndex: number = 0;
   idToIndex: { [id: string]: number };
+  virtualizer: Virtualizer<HTMLDivElement, Element> | null = null;
 
   constructor(
     public store: Store<RootState, Actions>,
     public props: TreeProps<T>,
-    public list: MutableRefObject<FixedSizeList | null>,
-    public listEl: MutableRefObject<HTMLDivElement | null>
+    public parentRef: MutableRefObject<HTMLDivElement | null>,
   ) {
     /* Changes here must also be made in update() */
     this.root = createRoot<T>(this);
@@ -50,6 +50,30 @@ export class TreeApi<T> {
     this.visibleNodes = createList<T>(this);
     this.idToIndex = createIndex(this.visibleNodes);
   }
+
+  // Set reference to virtualizer
+  setVirtualizer(virtualizer: Virtualizer<HTMLDivElement, Element>) {
+    this.virtualizer = virtualizer;
+  }
+
+  // Custom scroll function for TanStack Virtual
+  customScrollToFn = (
+    offset: number,
+    defaultScrollToFn: (offset: number) => void,
+    options?: { align?: "start" | "center" | "end" | "auto" },
+  ) => {
+    defaultScrollToFn(offset);
+  };
+
+  // Called when virtualized list changes
+  onVirtualizerChange = () => {
+    if (!this.virtualizer) return;
+    const items = this.virtualizer.getVirtualItems();
+    if (items.length > 0) {
+      this.visibleStartIndex = items[0].index;
+      this.visibleStopIndex = items[items.length - 1].index;
+    }
+  };
 
   /* Store helpers */
 
@@ -96,7 +120,7 @@ export class TreeApi<T> {
       this.props.searchMatch ??
       ((node, term) => {
         const string = JSON.stringify(
-          Object.values(node.data as { [k: string]: unknown })
+          Object.values(node.data as { [k: string]: unknown }),
         );
         return string.toLocaleLowerCase().includes(term.toLocaleLowerCase());
       });
@@ -113,7 +137,7 @@ export class TreeApi<T> {
     const id = utils.access<string>(data, get);
     if (!id)
       throw new Error(
-        "Data must contain an 'id' property or props.idAccessor must return a string"
+        "Data must contain an 'id' property or props.idAccessor must return a string",
       );
     return id;
   }
@@ -194,7 +218,7 @@ export class TreeApi<T> {
       type?: "internal" | "leaf";
       parentId?: null | string;
       index?: null | number;
-    } = {}
+    } = {},
   ) {
     const parentId =
       opts.parentId === undefined
@@ -298,40 +322,54 @@ export class TreeApi<T> {
   }
 
   pageUp() {
-    const start = this.visibleStartIndex;
-    const stop = this.visibleStopIndex;
-    const page = stop - start;
+    if (!this.virtualizer) return;
+    const items = this.virtualizer.getVirtualItems();
+    if (items.length === 0) return;
+
+    const firstVisible = items[0].index;
+    const visibleCount = items.length;
+
     let index = this.focusedNode?.rowIndex ?? 0;
-    if (index > start) {
-      index = start;
+    if (index > firstVisible) {
+      index = firstVisible;
     } else {
-      index = Math.max(start - page, 0);
+      index = Math.max(firstVisible - visibleCount, 0);
     }
     this.focus(this.at(index));
   }
 
   pageDown() {
-    const start = this.visibleStartIndex;
-    const stop = this.visibleStopIndex;
-    const page = stop - start;
+    if (!this.virtualizer) return;
+    const items = this.virtualizer.getVirtualItems();
+    if (items.length === 0) return;
+
+    const lastVisible = items[items.length - 1].index;
+    const visibleCount = items.length;
+
     let index = this.focusedNode?.rowIndex ?? 0;
-    if (index < stop) {
-      index = stop;
+    if (index < lastVisible) {
+      index = lastVisible;
     } else {
-      index = Math.min(index + page, this.visibleNodes.length - 1);
+      index = Math.min(index + visibleCount, this.visibleNodes.length - 1);
     }
     this.focus(this.at(index));
   }
 
-  select(node: Identity, opts: { align?: Align; focus?: boolean } = {}) {
+  select(
+    node: Identity,
+    opts: {
+      align?: "start" | "center" | "end" | "auto";
+      scroll?: boolean;
+    } = {},
+  ) {
     if (!node) return;
-    const changeFocus = opts.focus !== false;
+    const changeFocus = opts.scroll !== false;
     const id = identify(node);
     if (changeFocus) this.dispatch(focus(id));
     this.dispatch(selection.only(id));
     this.dispatch(selection.anchor(id));
     this.dispatch(selection.mostRecent(id));
-    this.scrollTo(id, opts.align);
+    if (opts.align) this.scrollTo(id, opts.align);
     if (this.focusedNode && changeFocus) {
       safeRun(this.props.onFocus, this.focusedNode);
     }
@@ -534,8 +572,11 @@ export class TreeApi<T> {
 
   /* Scrolling */
 
-  scrollTo(identity: Identity, align: Align = "smart") {
-    if (!identity) return;
+  scrollTo(
+    identity: Identity,
+    align: "start" | "center" | "end" | "auto" = "auto",
+  ) {
+    if (!identity || !this.virtualizer) return;
     const id = identify(identity);
     this.openParents(id);
     return utils
@@ -543,7 +584,7 @@ export class TreeApi<T> {
       .then(() => {
         const index = this.idToIndex[id];
         if (index === undefined) return;
-        this.list.current?.scrollToItem(index, align);
+        this.virtualizer?.scrollToIndex(index, { align });
       })
       .catch(() => {
         // Id: ${id} never appeared in the list.
@@ -632,11 +673,6 @@ export class TreeApi<T> {
 
   onBlur() {
     this.dispatch(treeBlur());
-  }
-
-  onItemsRendered(args: ListOnItemsRenderedProps) {
-    this.visibleStartIndex = args.visibleStartIndex;
-    this.visibleStopIndex = args.visibleStopIndex;
   }
 
   /* Get Renderers */
