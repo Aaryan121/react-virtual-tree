@@ -84,6 +84,8 @@ export function DefaultContainer() {
   return (
     <div
       role="tree"
+      aria-label="Tree"
+      aria-multiselectable={!tree.props.disableMultiSelection}
       style={{
         height: tree.height,
         width: tree.width,
@@ -147,7 +149,14 @@ export function DefaultContainer() {
             tree.activate(tree.focusedNode);
             return;
           } else if (!e.shiftKey || tree.props.disableMultiSelection) {
-            tree.focus(next);
+            if (tree.props.selectionFollowsFocus) {
+              tree.focus(next);
+            } else {
+              tree.focus(next);
+              if (!e.altKey && !e.ctrlKey) {
+                tree.select(next);
+              }
+            }
             return;
           } else {
             if (!next) return;
@@ -166,7 +175,14 @@ export function DefaultContainer() {
           e.preventDefault();
           const prev = tree.prevNode;
           if (!e.shiftKey || tree.props.disableMultiSelection) {
-            tree.focus(prev);
+            if (tree.props.selectionFollowsFocus) {
+              tree.focus(prev);
+            } else {
+              tree.focus(prev);
+              if (!e.altKey && !e.ctrlKey) {
+                tree.select(prev);
+              }
+            }
             return;
           } else {
             if (!prev) return;
@@ -308,11 +324,22 @@ export function DefaultContainer() {
             const node = tree.visibleNodes[virtualRow.index];
             const nodeIsSticky = isSticky(virtualRow.index);
             const nodeIsActiveSticky = isActiveSticky(virtualRow.index);
+            const level = node.level + 1;
+            const expanded = node.isInternal
+              ? node.isOpen
+                ? "true"
+                : "false"
+              : undefined;
+            const selected = node.isSelected ? "true" : "false";
 
             return (
               <div
                 key={virtualRow.key}
                 data-index={virtualRow.index}
+                role="treeitem"
+                aria-level={level}
+                aria-expanded={expanded}
+                aria-selected={selected}
                 style={{
                   // Apply conditional styling for sticky headers
                   ...(nodeIsSticky
